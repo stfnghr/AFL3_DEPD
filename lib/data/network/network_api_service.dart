@@ -9,12 +9,27 @@ import 'package:depd_mvvm_2025/shared/shared.dart';
 
 /// Implementasi BaseApiServices untuk menangani request GET, POST ke API RajaOngkir.
 class NetworkApiServices implements BaseApiServices {
+  
+  Uri _buildUri(String endpoint) {
+    final baseDomain = "https://${Const.baseUrl}";
+
+    final subUrlClean = Const.subUrl.endsWith('/') 
+        ? Const.subUrl.substring(0, Const.subUrl.length - 1) 
+        : Const.subUrl;
+    
+    final endpointClean = endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+
+    Uri uri = Uri.parse('$baseDomain$subUrlClean/$endpointClean'); 
+    
+    return uri;
+  }
+
   /// Melakukan request GET ke endpoint
   /// Mengembalikan JSON ter-decode atau melempar AppException yang sesuai.
   @override
   Future<dynamic> getApiResponse(String endpoint) async {
     try {
-      final uri = Uri.https(Const.baseUrl, Const.subUrl + endpoint);
+      final uri = _buildUri(endpoint); 
 
       // Log request GET (untuk debug: URL + header).
       _logRequest('GET', uri, Const.apiKey);
@@ -22,9 +37,10 @@ class NetworkApiServices implements BaseApiServices {
       final response = await http.get(
         uri,
         headers: {
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/x-www-form-urlencoded', 
           'key': Const.apiKey,
         },
+        
       );
 
       // Penanganan respons (status + decode JSON + pemetaan error).
@@ -46,7 +62,7 @@ class NetworkApiServices implements BaseApiServices {
   @override
   Future<dynamic> postApiResponse(String endpoint, dynamic data) async {
     try {
-      final uri = Uri.https(Const.baseUrl, Const.subUrl + endpoint);
+      final uri = _buildUri(endpoint); 
 
       // Log request POST termasuk payload body.
       _logRequest('POST', uri, Const.apiKey, data);
@@ -80,7 +96,6 @@ class NetworkApiServices implements BaseApiServices {
   /// Print debug metadata request (method, URL, header, body).
   void _logRequest(String method, Uri uri, String apiKey, [dynamic data]) {
     print("== $method REQUEST ==");
-    // print("API Key: { key: $apiKey }");
     print("Final URL ($method): $uri");
     if (data != null) {
       print("Data body: $data");
@@ -129,28 +144,22 @@ class NetworkApiServices implements BaseApiServices {
       case 200:
         try {
           final decoded = jsonDecode(response.body);
-          // decoded null (tidak terjadi di Dart, tapi tetap dicek).
           if (decoded == null) throw FetchDataException('Empty JSON');
           return decoded;
         } catch (_) {
-          // JSON tidak bisa di-decode pada status sukses.
           throw FetchDataException('Invalid JSON');
         }
 
       case 400:
-        // Error dari sisi client: payload/parameter salah.
         throw BadRequestException(response.body);
 
       case 404:
-        // Resource atau endpoint tidak ditemukan.
         throw NotFoundException('Not Found: ${response.body}');
 
       case 500:
-        // Kegagalan dari sisi server.
         throw ServerErrorException('Server error: ${response.body}');
 
       default:
-        // Status lain yang tidak ditangani.
         throw FetchDataException(
           'Unexpected status ${response.statusCode}: ${response.body}',
         );

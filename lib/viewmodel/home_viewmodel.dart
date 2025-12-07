@@ -4,16 +4,13 @@ import 'package:depd_mvvm_2025/data/response/api_response.dart';
 import 'package:depd_mvvm_2025/data/response/status.dart';
 import 'package:depd_mvvm_2025/repository/home_repository.dart';
 
-// ViewModel untuk mengelola data dan state Home (provinsi, kota, ongkir)
 class HomeViewModel with ChangeNotifier {
-  // Repository untuk akses API
   final _homeRepo = HomeRepository();
+  final Map<int, List<City>> _cityCache = {}; 
 
-  // State daftar provinsi
   ApiResponse<List<Province>> provinceList = ApiResponse.notStarted();
   setProvinceList(ApiResponse<List<Province>> response) {
     provinceList = response;
-    // Untuk memberitahu semua widget yang sedang mendengarkan (listening) bahwa ketika ada perubahan data yang terjadi, maka widget tersebut perlu di-rebuild (render ulang).
     notifyListeners();
   }
 
@@ -21,88 +18,85 @@ class HomeViewModel with ChangeNotifier {
   Future getProvinceList() async {
     if (provinceList.status == Status.completed) return;
     setProvinceList(ApiResponse.loading());
-    // Panggil repository untuk fetch data dan sesuaikan output berdasarkan statusnya
-    _homeRepo
-        // fetchProvinceList() akan mengembalikan Future<List<Province>>
-        .fetchProvinceList()
-        // Menggunakan then untuk menangani hasil sukses
-        .then((value) {
-          setProvinceList(ApiResponse.completed(value));
-        })
-        // Menggunakan onError untuk menangani error
-        .onError((error, _) {
-          setProvinceList(ApiResponse.error(error.toString()));
-        });
+    _homeRepo.fetchProvinceList().then((value) {
+      setProvinceList(ApiResponse.completed(value));
+    }).onError((error, _) {
+      setProvinceList(ApiResponse.error(error.toString()));
+    });
   }
 
-  // Cache kota per id provinsi agar tidak panggil API berulang
-  final Map<int, List<City>> _cityCache = {};
-
-  // State daftar kota asal
+  // daftar kota asal
   ApiResponse<List<City>> cityOriginList = ApiResponse.notStarted();
   setCityOriginList(ApiResponse<List<City>> response) {
     cityOriginList = response;
     notifyListeners();
   }
 
-  // Ambil kota asal
-  Future getCityOriginList(int provId) async {
-    if (_cityCache.containsKey(provId)) {
-      setCityOriginList(ApiResponse.completed(_cityCache[provId]!));
-      return;
-    }
-    setCityOriginList(ApiResponse.loading());
-    _homeRepo
-        .fetchCityList(provId)
-        .then((value) {
-          _cityCache[provId] = value;
-          setCityOriginList(ApiResponse.completed(value));
-        })
-        .onError((error, _) {
-          setCityOriginList(ApiResponse.error(error.toString()));
-        });
-  }
-
-  // State daftar kota tujuan
+  // daftar kota tujuan
   ApiResponse<List<City>> cityDestinationList = ApiResponse.notStarted();
   setCityDestinationList(ApiResponse<List<City>> response) {
     cityDestinationList = response;
     notifyListeners();
   }
-
-  // Ambil kota tujuan
-  Future getCityDestinationList(int provId) async {
-    if (_cityCache.containsKey(provId)) {
-      setCityDestinationList(ApiResponse.completed(_cityCache[provId]!));
-      return;
+  
+  Future<List<City>> _fetchAndCacheCityList(int provinceId) async {
+    if (_cityCache.containsKey(provinceId)) {
+      return _cityCache[provinceId]!;
     }
-    setCityDestinationList(ApiResponse.loading());
-    _homeRepo
-        .fetchCityList(provId)
-        .then((value) {
-          _cityCache[provId] = value;
-          setCityDestinationList(ApiResponse.completed(value));
-        })
-        .onError((error, _) {
-          setCityDestinationList(ApiResponse.error(error.toString()));
-        });
+    
+    final cities = await _homeRepo.fetchCityList(provinceId);
+    
+    _cityCache[provinceId] = cities;
+    return cities;
   }
 
-  // State daftar biaya ongkir
+  Future<void> getCityOriginList({required int provinceId}) async {
+    // Jika sudah ada di cache, langsung set state dan return
+    if (_cityCache.containsKey(provinceId)) {
+      setCityOriginList(ApiResponse.completed(_cityCache[provinceId]!));
+      return;
+    }
+
+    setCityOriginList(ApiResponse.loading());
+    try {
+      final value = await _fetchAndCacheCityList(provinceId);
+      setCityOriginList(ApiResponse.completed(value));
+    } catch (error) {
+      setCityOriginList(ApiResponse.error(error.toString()));
+    }
+  }
+
+  Future<void> getCityDestinationList({required int provinceId}) async {
+    // Jika sudah ada di cache, langsung set state dan return
+    if (_cityCache.containsKey(provinceId)) {
+      setCityDestinationList(ApiResponse.completed(_cityCache[provinceId]!));
+      return;
+    }
+    
+    setCityDestinationList(ApiResponse.loading());
+    try {
+      final value = await _fetchAndCacheCityList(provinceId);
+      setCityDestinationList(ApiResponse.completed(value));
+    } catch (error) {
+      setCityDestinationList(ApiResponse.error(error.toString()));
+    }
+  }
+  
+  // Biaya Ongkir
   ApiResponse<List<Costs>> costList = ApiResponse.notStarted();
   setCostList(ApiResponse<List<Costs>> response) {
     costList = response;
     notifyListeners();
   }
 
-  // Flag loading untuk proses cek ongkir
+  // loading proses hitung ongkir
   bool isLoading = false;
   void setLoading(bool value) {
     isLoading = value;
     notifyListeners();
   }
 
-  // Hitung biaya pengiriman (set loading + handle success/error). Terdapat objek yang merepresentasikan nilai (atau error) yang akan tersedia di masa depan (asynchronous)
+  // Hitung biaya pengiriman
   Future checkShipmentCost(
     String origin,
     String originType,
